@@ -16,6 +16,6 @@
         args="0 0 0 0 -1.58 1.58 camera_link triton_link 50" />
 
     <node pkg="stingray_sim" name="path_drawing" type="draw_path.py"/>
-    <node pkg="stingray_sim" type="train.py" name="triton_train" output="screen"/>
+    <node pkg="stingray_sim" type="triton_wall_follow.py" name="triton_wall_follow" output="screen"/>
 
 </launch>

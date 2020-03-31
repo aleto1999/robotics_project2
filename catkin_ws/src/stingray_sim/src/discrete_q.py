@@ -1,0 +1,124 @@
+#!/usr/bin/python2
+
+import rospy
+from sensor_msgs.msg import LaserScan
+from geometry_msgs.msg import Pose2D
+from nav_msgs.msg import Odometry
+import numpy as np
+from std_srvs.srv import Empty
+import math
+
+right = 0
+right_front = 0
+front = 0
+left = 0
+behind = 0
+
+pub = ""
+
+def scan_callback(msg):
+    global right, right_front, front, left, behind
+    right = msg.ranges[0]
+    right_front = msg.ranges[45]
+    front = msg.ranges[90]
+    left = msg.ranges[180]
+    behind = msg.ranges[270]
+
+PI = 3.14159  
+
+def close_far_l(val):
+    if val <= 0.5: return 0 # close
+    else: return 1 # far
+
+def close_far_rf(val):
+    if val <= 1.2: return 0 # close
+    else: return 1 # far
+    
+def close_far_ext(val):
+    # return 0 for too close, 1 for med, 2 for far, 3 for too far
+    if val <= 0.5: return 0 # too close
+    elif val <= 0.6: return 1 # close
+    elif val <= 0.8: return 2 # medium
+    elif val <= 1.2: return 3 # far
+    return 4                  # too far 
+
+def orientation():
+    nearest = min(front, left, right, behind)
+    if nearest == front: return 0     # approaching
+    if nearest == behind: return 1    # moving away
+    if nearest == right: return 2     # parallel
+    return 3
+
+def get_discrete_state():
+    toReturn = []
+    toReturn.append(close_far_ext(right))
+    toReturn.append(close_far_rf(right_front))
+    toReturn.append(close_far_ext(front)) 
+    toReturn.append(close_far_l(left))
+    toReturn.append(orientation())
+    print(toReturn)
+    return toReturn
+
+def step(action):
+    print(action)
+    # declare a publisher to move the robot
+    new_pose = Pose2D()
+    if action == 0: 
+        new_pose.x = 0.3
+    elif action == 1: # left
+        new_pose.theta = math.pi / 4
+    else: # right
+        new_pose.theta = - math.pi / 4
+    pub.publish(new_pose)
+
+def main():
+    
+    try:
+        # initialize publisher and subscribers
+        global pub 
+        pub = rospy.Publisher('/triton_lidar/vel_cmd', Pose2D, queue_size=10)
+        rospy.init_node('wall_follow', anonymous=True)
+
+        q_table = np.zeros([5,2,5,2,4,3])
+        
+        for i in range(5):
+            for j in range(2):
+                for k in range(2):
+                    for l in range(4):
+                        q_table[i][j][4][k][l][0] = 5
+                        q_table[i][j][3][k][l][0] = 5
+                        q_table[i][j][2][k][l][1] = 5
+                
+        for i in range(2):
+            for j in range(5):
+                for k in range(2):
+                    for l in range(4):
+                        q_table[2][i][j][k][l][0] = 5
+                        q_table[3][i][j][k][l][0] = 5
+                        q_table[1][i][j][k][l][0] = 5
+                        q_table[0][i][j][k][l][1] = 50
+
+        # step through q table
+        steps = 1000
+        # while steps > 0:
+        while not rospy.is_shutdown():  
+            state = rospy.wait_for_message('/scan', LaserScan)
+            scan_callback(state)
+       
+            params = get_discrete_state()
+            rew0 = q_table[params[0]][params[1]][params[2]][params[3]][params[4]][0]
+            rew1 = q_table[params[0]][params[1]][params[2]][params[3]][params[4]][1]
+            rew2 = q_table[params[0]][params[1]][params[2]][params[3]][params[4]][2]
+
+            actionMax = max(rew0, rew1, rew2)
+            if actionMax == rew2: step(2)
+            elif actionMax == rew1: step(1)
+            else: step(0)
+
+            steps = steps - 1
+        
+    except rospy.ROSInterruptException:
+        rospy.loginfo("node terminated" )
+   
+if __name__ == '__main__':
+    main()
