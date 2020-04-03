@@ -8,6 +8,7 @@ import numpy as np
 from std_srvs.srv import Empty
 import math
 from gazebo_msgs.srv import GetModelState, GetModelStateRequest
+import pickle
 
 right = 0
 right_front = 0
@@ -19,15 +20,10 @@ pub = ""
 
 def scan_callback(msg):
     global right, right_front, front, left, behind
-    print("calculating right")
     right = (msg.ranges[0] + msg.ranges[315] + msg.ranges[45]) / 3
-    print("calculating right front")
     right_front = (msg.ranges[45] + msg.ranges[0]) / 2
-    print("calculating front")
     front = (msg.ranges[90] + msg.ranges[45] + msg.ranges[135]) / 3
-    print("calculating left")
     left = (msg.ranges[180] + msg.ranges[135] + msg.ranges[225]) / 3
-    print("calculating behind")
     behind = msg.ranges[270]
  
 
@@ -66,24 +62,17 @@ def get_discrete_state():
     
     
     try: 
-        print("waiting for message")
         state = rospy.wait_for_message('/scan', LaserScan, timeout=1000)
-        print("call callback function")
         scan_callback(state)
 
     except rospy.ROSInterruptException:
         rospy.loginfo("node terminated")
 
     toReturn = []
-    print("appending right")
     toReturn.append(close_far_ext(right))
-    print("appending right-front")
     toReturn.append(close_far_rf(right_front))
-    print("appending front")
     toReturn.append(close_far_ext(front)) 
-    print("appending left")
     toReturn.append(close_far_l(left))
-    print("appending orientation")
     toReturn.append(orientation())
     
     return toReturn
@@ -177,7 +166,6 @@ def main():
     step = 0
     done = False
     last_3_loc = []
-    counter = 0
 
     # variables for learning decay
     epsilon = 0
@@ -190,9 +178,11 @@ def main():
         pub = rospy.Publisher('/triton_lidar/vel_cmd', Pose2D, queue_size=10)
         rospy.init_node('triton_train', anonymous=True)
 
+        # create a table initialized with 0's
         q_table = np.zeros([5,2,5,2,4,3])
         
         for episode in range(EPISODES):
+            
             # reset simulation
             reset_simulation()
             step = 0 
@@ -204,8 +194,6 @@ def main():
             epsilon = epsilon_0 * (DECAY ** episode)
 
             while done == False:
-
-                counter +=1
 
                 # choose an action
                 action = 0 
@@ -230,15 +218,10 @@ def main():
                 reward = calculate_reward(new_state)
 
                 # update q_table
-                print("calculating max_future_q")
                 max_future_q = get_max_action(q_table, new_state)[0]
-                print("getting current_q")
                 current_q = q_table[current_state[0]][current_state[1]][current_state[2]][current_state[3]][current_state[4]][action]
-                print("calculating new_q")
                 new_q = current_q + LEARNING_RATE * (reward + DISCOUNT * max_future_q - current_q)
-                print("updating q_table")
                 q_table[current_state[0]][current_state[1]][current_state[2]][current_state[3]][current_state[4]][action] = new_q 
-                print("updating current_state")
                 current_state = new_state
 
                 # print statements to track progress
@@ -246,7 +229,6 @@ def main():
                 print("Step: ", step)
                 print("Action: ", action)
                 print("State: ", current_state)
-                print("Count: ", counter)
                 print("Location: ", get_location())
 
                 # check termination
@@ -257,8 +239,7 @@ def main():
                 else:
                     last_3_loc.append(get_location()) 
                 step = step + 1
-                if step == STEPS: done = True
- 
+                if step == STEPS: done = True 
 
         save_table(q_table)
         

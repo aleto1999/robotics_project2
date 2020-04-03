@@ -100,14 +100,14 @@ def main():
 
         q_file = open('q_table_pickle', 'rb')
         q_table = pickle.load(q_file)
-        print(q_file)
+        print(q_table)
         
         while not rospy.is_shutdown():  
        
             current_state = get_discrete_state()
             action = get_max_action(q_table, current_state)
             step(action)
-
+            print(action)
         
     except rospy.ROSInterruptException:
         rospy.loginfo("node terminated" )
